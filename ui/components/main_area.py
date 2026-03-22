@@ -1,14 +1,12 @@
 # ui/components/main_area.py
 import streamlit as st
-import tempfile
-import os
-
-from loaders.pdf_loader import PDFLoader
-from rag.embeddings import Embeddings
-from rag.retriever import Retriever
-from rag.chain import Chain
+from services.rag_pdf_service import RagPdfService
+from config import MAX_UPLOAD_FILE_MB
 
 class MainArea:
+    def __init__(self):
+        self.qa_service = RagPdfService()
+
     def render(self):
         st.title("📄 PDF RAG Chatbot")
         st.caption("Upload PDF và đặt câu hỏi!")
@@ -26,27 +24,28 @@ class MainArea:
     def _file_uploader(self):
         uploaded_file = st.file_uploader("📂 Chọn file PDF", type="pdf")
 
+        if uploaded_file is not None:
+            is_valid_size, file_size_mb = self.qa_service.validate_upload_size(
+                uploaded_file,
+                MAX_UPLOAD_FILE_MB,
+            )
+            st.caption(f"Dung lượng file: {file_size_mb:.2f} MB / tối đa {MAX_UPLOAD_FILE_MB} MB")
+            if not is_valid_size:
+                st.error(
+                    f"❌ File quá lớn ({file_size_mb:.2f} MB). "
+                    f"Vui lòng chọn file <= {MAX_UPLOAD_FILE_MB} MB."
+                )
+                return
+
         if uploaded_file and st.button("⚡ Xử lý PDF"):
-            with st.spinner("Đang xử lý PDF..."):
-                st.session_state.chain = self._process_pdf(uploaded_file)
-                st.session_state.messages = []  # reset chat
-            st.success(f"✓ Xử lý xong!")
-
-    def _process_pdf(self, uploaded_file) -> Chain:
-        # Lưu file tạm
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-            tmp.write(uploaded_file.read())
-            tmp_path = tmp.name
-
-        # Gọi lần lượt các class
-        chunks = PDFLoader().load_and_split(tmp_path)
-        vectorstore = Embeddings().create_vectorstore(chunks)
-        retriever = Retriever(vectorstore)
-        chain = Chain(retriever.get_retriever())
-
-        # Xóa file tạm
-        os.unlink(tmp_path)
-        return chain
+            try:
+                with st.spinner("Đang xử lý PDF..."):
+                    st.session_state.chain = self.qa_service.build_chain(uploaded_file)
+                    st.session_state.messages = []  # reset chat
+                st.success("✓ Xử lý xong!")
+            except Exception as exc:
+                st.session_state.chain = None
+                st.error(f"❌ Xử lý PDF thất bại: {exc}")
 
     def _chat(self):
         # Hiển thị lịch sử chat
@@ -68,7 +67,7 @@ class MainArea:
             # Lấy câu trả lời
             with st.chat_message("assistant"):
                 with st.spinner("Đang suy nghĩ..."):
-                    answer = st.session_state.chain.ask(question)
+                    answer = self.qa_service.ask(st.session_state.chain, question)
                     st.write(answer)
                     st.session_state.messages.append({
                         "role": "assistant",

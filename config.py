@@ -18,3 +18,6 @@ CHUNK_OVERLAP = 50
 SEARCH_TYPE = "similarity"      # hoặc "mmr" để kết quả đa dạng hơn
 TOP_K = 3                       # số chunks trả về
 FETCH_K = 20                    # fetch nhiều rồi lọc
+
+# ===== UPLOAD =====
+MAX_UPLOAD_FILE_MB = 200         # Giới hạn dung lượng PDF upload
