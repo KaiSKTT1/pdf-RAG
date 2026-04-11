@@ -31,9 +31,9 @@ class MainArea:
             )
             st.caption(f"Dung lượng file: {file_size_mb:.2f} MB / tối đa {MAX_UPLOAD_FILE_MB} MB")
             if not is_valid_size:
-                st.error(
-                    f"❌ File quá lớn ({file_size_mb:.2f} MB). "
-                    f"Vui lòng chọn file <= {MAX_UPLOAD_FILE_MB} MB."
+                st.toast(
+                    f"File quá lớn ({file_size_mb:.2f} MB). Vui lòng chọn file <= {MAX_UPLOAD_FILE_MB} MB.",
+                    icon="❌",
                 )
                 return
 
@@ -42,10 +42,10 @@ class MainArea:
                 with st.spinner("Đang xử lý PDF..."):
                     st.session_state.chain = self.qa_service.build_chain(uploaded_file)
                     st.session_state.messages = []  # reset chat
-                st.success("✓ Xử lý xong!")
+                st.toast("Xử lý PDF xong!", icon="✅")
             except Exception as exc:
                 st.session_state.chain = None
-                st.error(f"❌ Xử lý PDF thất bại: {exc}")
+                st.toast(f"Xử lý PDF thất bại: {exc}", icon="❌")
 
     def _chat(self):
         # Hiển thị lịch sử chat
@@ -56,7 +56,7 @@ class MainArea:
         # Ô nhập câu hỏi
         if question := st.chat_input("Đặt câu hỏi về tài liệu..."):
             if st.session_state.chain is None:
-                st.warning("⚠️ Vui lòng upload PDF trước!")
+                st.toast("Vui lòng upload PDF trước!", icon="⚠️")
                 return
 
             # Hiển thị câu hỏi

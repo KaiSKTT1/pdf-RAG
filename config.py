@@ -1,10 +1,11 @@
+import os
+
 # ===== LLM - GEMINI =====
 GEMINI_MODEL = "gemini-2.5-flash"
-GEMINI_API_KEY = "AIzaSyCAp8pahwcpM1Uoz3Q7bSk5jKvgQj_L03M"
+GEMINI_API_KEY = os.getenv("GEMINI_KEY")
 LLM_TEMPERATURE = 0.7
 LLM_TOP_P = 0.9
 LLM_REPEAT_PENALTY = 1.1
-# Biến tương thích cho các chỗ cũ vẫn dùng tên LLM_MODEL
 LLM_MODEL = GEMINI_MODEL
 
 # ===== EMBEDDING =====
