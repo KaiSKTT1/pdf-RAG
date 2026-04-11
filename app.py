@@ -9,6 +9,7 @@ from rag.embeddings import Embeddings
 from rag.retriever import Retriever
 from rag.chain import Chain
 
+# Hàm main chạy console app
 class MainApp:
     def __init__(self):
         self.pdf_loader = PDFLoader()

@@ -1,28 +1,23 @@
-from langchain_ollama import OllamaLLM
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
-from config import LLM_MODEL, LLM_TEMPERATURE, LLM_TOP_P, LLM_REPEAT_PENALTY, OLLAMA_HOST
+from config import GEMINI_MODEL, GEMINI_API_KEY, LLM_TEMPERATURE
 
 class Chain:
     def __init__(self, retriever):
-        # Bước 1: tạo LLM
-        self.llm = OllamaLLM(
-            model=LLM_MODEL,
+        self.llm = ChatGoogleGenerativeAI(
+            model=GEMINI_MODEL,
             temperature=LLM_TEMPERATURE,
-            top_p=LLM_TOP_P,
-            repeat_penalty=LLM_REPEAT_PENALTY,
-            base_url=OLLAMA_HOST
+            google_api_key=GEMINI_API_KEY
         )
         self.retriever = retriever
 
     def _detect_language(self, text: str) -> str:
-        # Kiểm tra có ký tự tiếng Việt không
         vietnamese_chars = 'àáâãèéêìíòóôõùúýăđơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹ'
         is_vietnamese = any(char in text.lower() for char in vietnamese_chars)
         return "vi" if is_vietnamese else "en"
 
     def _create_chain(self, language: str) -> RetrievalQA:
-        # Chọn prompt theo ngôn ngữ
         if language == "vi":
             template = """Sử dụng ngữ cảnh sau đây để trả lời câu hỏi.
 Nếu bạn không biết, chỉ cần nói là bạn không biết.
@@ -56,7 +51,6 @@ Answer:"""
         )
 
     def ask(self, question: str) -> str:
-        # Detect ngôn ngữ → tạo chain phù hợp → gọi
         language = self._detect_language(question)
         chain = self._create_chain(language)
         result = chain.invoke({"query": question})
