@@ -21,10 +21,37 @@ class MainArea:
         if "messages" not in st.session_state:
             st.session_state.messages = []
 
+    # hàm đó không dùng dữ liệu của object nên để staticmethod cho đúng ý nghĩa.
+
+    @staticmethod
+    def _is_pdf(uploaded_file) -> bool:
+        file_name = (uploaded_file.name or "").lower()
+        mime_type = (uploaded_file.type or "").lower()
+        return file_name.endswith(".pdf") or mime_type == "application/pdf"
+
+    # Hàm này chuyển đổi thống báo của gemini thành dữ liệu cho người dùng nhận thấy
+    @staticmethod
+    def _friendly_model_error(exc: Exception) -> str:
+        error_text = str(exc)
+        error_lower = error_text.lower()
+
+        if "resourceexhausted" in error_lower or "quota" in error_lower or "429" in error_lower:
+            return "Hết quota Gemini. Vui lòng kiểm tra lại hạn mức hoặc đổi API key/project."
+        if "api key" in error_lower or "permission denied" in error_lower or "unauthorized" in error_lower:
+            return "Gemini API key không hợp lệ hoặc chưa được cấp quyền."
+        if "connect" in error_lower or "connection" in error_lower or "timeout" in error_lower:
+            return "Không kết nối được tới dịch vụ mô hình. Vui lòng thử lại sau."
+
+        return f"Lỗi khi gọi mô hình: {error_text}"
+
     def _file_uploader(self):
-        uploaded_file = st.file_uploader("📂 Chọn file PDF", type="pdf")
+        uploaded_file = st.file_uploader("📂 Chọn file", type=None)
 
         if uploaded_file is not None:
+            if not self._is_pdf(uploaded_file):
+                st.toast("Định dạng file không hợp lệ. Chỉ hỗ trợ file PDF.", icon="⚠️")
+                return
+
             is_valid_size, file_size_mb = self.qa_service.validate_upload_size(
                 uploaded_file,
                 MAX_UPLOAD_FILE_MB,
@@ -45,7 +72,7 @@ class MainArea:
                 st.toast("Xử lý PDF xong!", icon="✅")
             except Exception as exc:
                 st.session_state.chain = None
-                st.toast(f"Xử lý PDF thất bại: {exc}", icon="❌")
+                st.toast(self._friendly_model_error(exc), icon="❌")
 
     def _chat(self):
         # Hiển thị lịch sử chat
@@ -67,9 +94,12 @@ class MainArea:
             # Lấy câu trả lời
             with st.chat_message("assistant"):
                 with st.spinner("Đang suy nghĩ..."):
-                    answer = self.qa_service.ask(st.session_state.chain, question)
-                    st.write(answer)
-                    st.session_state.messages.append({
-                        "role": "assistant",
-                        "content": answer
-                    })
+                    try:
+                        answer = self.qa_service.ask(st.session_state.chain, question)
+                        st.write(answer)
+                        st.session_state.messages.append({
+                            "role": "assistant",
+                            "content": answer
+                        })
+                    except Exception as exc:
+                        st.toast(self._friendly_model_error(exc), icon="❌")

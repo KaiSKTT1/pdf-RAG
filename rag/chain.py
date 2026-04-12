@@ -19,25 +19,35 @@ class Chain:
 
     def _create_chain(self, language: str) -> RetrievalQA:
         if language == "vi":
-            template = """Sử dụng ngữ cảnh sau đây để trả lời câu hỏi.
-Nếu bạn không biết, chỉ cần nói là bạn không biết.
-Trả lời ngắn gọn (3-4 câu) BẮT BUỘC bằng tiếng Việt.
+            template = """Bạn là trợ lý AI chuyên phân tích tài liệu. Nhiệm vụ của bạn là trả lời câu hỏi DỰA HOÀN TOÀN vào ngữ cảnh được cung cấp.
 
-Ngữ cảnh: {context}
+NGUYÊN TẮC BẮT BUỘC:
+- Chỉ sử dụng thông tin có trong ngữ cảnh bên dưới
+- Nếu ngữ cảnh không đủ thông tin, hãy nói: "Tài liệu không có đủ thông tin để trả lời câu hỏi này."
+- KHÔNG tự bịa thêm thông tin ngoài ngữ cảnh
+- Trả lời bằng tiếng Việt, rõ ràng và có cấu trúc
 
-Câu hỏi: {question}
+NGỮ CẢNH:
+{context}
 
-Trả lời:"""
+CÂU HỎI: {question}
+
+TRẢ LỜI:"""
         else:
-            template = """Use the following context to answer the question.
-If you don't know the answer, just say you don't know.
-Keep answer concise (3-4 sentences).
+            template = """You are an AI assistant specialized in document analysis. Your task is to answer questions STRICTLY based on the provided context.
 
-Context: {context}
+MANDATORY RULES:
+- Only use information from the context below
+- If the context lacks sufficient information, respond: "The document does not contain enough information to answer this question."
+- Do NOT fabricate or add information beyond the context
+- Be clear, structured, and thorough in your response
 
-Question: {question}
+CONTEXT:
+{context}
 
-Answer:"""
+QUESTION: {question}
+
+ANSWER:"""
 
         prompt = PromptTemplate(
             input_variables=["context", "question"],
