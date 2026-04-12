@@ -14,8 +14,8 @@ class Sidebar:
     def _instructions(self):
         st.header("📖 Hướng dẫn")
         st.markdown("""
-        1. Upload file PDF
-        2. Nhấn **Xử lý PDF**
+        1. Upload file PDF hoặc DOCX
+        2. Nhấn **Xử lý tài liệu**
         3. Đặt câu hỏi về nội dung
         """)
 

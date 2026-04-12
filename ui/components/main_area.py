@@ -8,8 +8,8 @@ class MainArea:
         self.qa_service = RagPdfService()
 
     def render(self):
-        st.title("📄 PDF RAG Chatbot")
-        st.caption("Upload PDF và đặt câu hỏi!")
+        st.title("📄 PDF/DOCX RAG Chatbot")
+        st.caption("Upload PDF hoặc DOCX và đặt câu hỏi!")
 
         self._init_session_state()
         self._file_uploader()
@@ -20,14 +20,24 @@ class MainArea:
             st.session_state.chain = None
         if "messages" not in st.session_state:
             st.session_state.messages = []
+        if "selected_document_name" not in st.session_state:
+            st.session_state.selected_document_name = None
+        if "active_document_name" not in st.session_state:
+            st.session_state.active_document_name = None
 
     # hàm đó không dùng dữ liệu của object nên để staticmethod cho đúng ý nghĩa.
 
     @staticmethod
-    def _is_pdf(uploaded_file) -> bool:
+    def _is_supported_document(uploaded_file) -> bool:
         file_name = (uploaded_file.name or "").lower()
         mime_type = (uploaded_file.type or "").lower()
-        return file_name.endswith(".pdf") or mime_type == "application/pdf"
+        if file_name.endswith(".pdf") or mime_type == "application/pdf":
+            return True
+
+        if file_name.endswith(".docx") or mime_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+            return True
+
+        return False
 
     # Hàm này chuyển đổi thống báo của gemini thành dữ liệu cho người dùng nhận thấy
     @staticmethod
@@ -45,12 +55,24 @@ class MainArea:
         return f"Lỗi khi gọi mô hình: {error_text}"
 
     def _file_uploader(self):
-        uploaded_file = st.file_uploader("📂 Chọn file", type=None)
+        uploaded_file = st.file_uploader("📂 Chọn file", type=["pdf", "docx"])
 
         if uploaded_file is not None:
-            if not self._is_pdf(uploaded_file):
-                st.toast("Định dạng file không hợp lệ. Chỉ hỗ trợ file PDF.", icon="⚠️")
+            st.session_state.selected_document_name = uploaded_file.name
+
+            if not self._is_supported_document(uploaded_file):
+                st.toast("Định dạng file không hợp lệ. Chỉ hỗ trợ file PDF hoặc DOCX.", icon="⚠️")
                 return
+
+            st.caption(f"File đã chọn: {uploaded_file.name}")
+            if (
+                st.session_state.active_document_name
+                and st.session_state.active_document_name != uploaded_file.name
+            ):
+                st.caption(
+                    f"File đang dùng hiện tại: {st.session_state.active_document_name}. "
+                    "Nhấn 'Xử lý tài liệu' để chuyển sang file mới."
+                )
 
             is_valid_size, file_size_mb = self.qa_service.validate_upload_size(
                 uploaded_file,
@@ -64,17 +86,22 @@ class MainArea:
                 )
                 return
 
-        if uploaded_file and st.button("⚡ Xử lý PDF"):
+        if uploaded_file and st.button("⚡ Xử lý tài liệu"):
             try:
-                with st.spinner("Đang xử lý PDF..."):
+                with st.spinner("Đang xử lý tài liệu..."):
                     st.session_state.chain = self.qa_service.build_chain(uploaded_file)
+                    st.session_state.active_document_name = uploaded_file.name
                     st.session_state.messages = []  # reset chat
-                st.toast("Xử lý PDF xong!", icon="✅")
+                st.toast(f"Xử lý tài liệu xong: {uploaded_file.name}", icon="✅")
             except Exception as exc:
                 st.session_state.chain = None
+                st.session_state.active_document_name = None
                 st.toast(self._friendly_model_error(exc), icon="❌")
 
     def _chat(self):
+        if st.session_state.active_document_name:
+            st.caption(f"📌 Đang hỏi trên file: {st.session_state.active_document_name}")
+
         # Hiển thị lịch sử chat
         for message in st.session_state.messages:
             with st.chat_message(message["role"]):
@@ -83,7 +110,7 @@ class MainArea:
         # Ô nhập câu hỏi
         if question := st.chat_input("Đặt câu hỏi về tài liệu..."):
             if st.session_state.chain is None:
-                st.toast("Vui lòng upload PDF trước!", icon="⚠️")
+                st.toast("Vui lòng upload PDF hoặc DOCX trước!", icon="⚠️")
                 return
 
             # Hiển thị câu hỏi
