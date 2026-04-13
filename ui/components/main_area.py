@@ -20,6 +20,10 @@ class MainArea:
             st.session_state.chain = None
         if "messages" not in st.session_state:
             st.session_state.messages = []
+        if "chat_history" not in st.session_state:
+            st.session_state.chat_history = []
+        if "selected_history_idx" not in st.session_state:
+            st.session_state.selected_history_idx = None
         if "selected_document_name" not in st.session_state:
             st.session_state.selected_document_name = None
         if "active_document_name" not in st.session_state:
@@ -92,6 +96,8 @@ class MainArea:
                     st.session_state.chain = self.qa_service.build_chain(uploaded_file)
                     st.session_state.active_document_name = uploaded_file.name
                     st.session_state.messages = []  # reset chat
+                    st.session_state.chat_history = []  # reset lịch sử Q&A
+                    st.session_state.selected_history_idx = None
                 st.toast(f"Xử lý tài liệu xong: {uploaded_file.name}", icon="✅")
             except Exception as exc:
                 st.session_state.chain = None
@@ -127,6 +133,10 @@ class MainArea:
                         st.session_state.messages.append({
                             "role": "assistant",
                             "content": answer
+                        })
+                        st.session_state.chat_history.append({
+                            "question": question,
+                            "answer": answer,
                         })
                     except Exception as exc:
                         st.toast(self._friendly_model_error(exc), icon="❌")

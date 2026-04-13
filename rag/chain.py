@@ -1,6 +1,4 @@
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain.chains import RetrievalQA
-from langchain.prompts import PromptTemplate
 from config import GEMINI_MODEL, GEMINI_API_KEY, LLM_TEMPERATURE
 
 class Chain:
@@ -17,9 +15,9 @@ class Chain:
         is_vietnamese = any(char in text.lower() for char in vietnamese_chars)
         return "vi" if is_vietnamese else "en"
 
-    def _create_chain(self, language: str) -> RetrievalQA:
+    def _build_template(self, language: str) -> str:
         if language == "vi":
-            template = """Bạn là trợ lý AI chuyên phân tích tài liệu. Nhiệm vụ của bạn là trả lời câu hỏi DỰA HOÀN TOÀN vào ngữ cảnh được cung cấp.
+            return """Bạn là trợ lý AI chuyên phân tích tài liệu. Nhiệm vụ của bạn là trả lời câu hỏi DỰA HOÀN TOÀN vào ngữ cảnh được cung cấp.
 
 NGUYÊN TẮC BẮT BUỘC:
 - Chỉ sử dụng thông tin có trong ngữ cảnh bên dưới
@@ -33,8 +31,8 @@ NGỮ CẢNH:
 CÂU HỎI: {question}
 
 TRẢ LỜI:"""
-        else:
-            template = """You are an AI assistant specialized in document analysis. Your task is to answer questions STRICTLY based on the provided context.
+
+        return """You are an AI assistant specialized in document analysis. Your task is to answer questions STRICTLY based on the provided context.
 
 MANDATORY RULES:
 - Only use information from the context below
@@ -49,19 +47,48 @@ QUESTION: {question}
 
 ANSWER:"""
 
-        prompt = PromptTemplate(
-            input_variables=["context", "question"],
-            template=template
-        )
+    def _retrieve_documents(self, question: str) -> list:
+        # Hỗ trợ cả retriever API mới (invoke) và cũ (get_relevant_documents)
+        if hasattr(self.retriever, "invoke"):
+            return self.retriever.invoke(question) or []
+        if hasattr(self.retriever, "get_relevant_documents"):
+            return self.retriever.get_relevant_documents(question) or []
+        raise AttributeError("Retriever không hỗ trợ invoke/get_relevant_documents")
 
-        return RetrievalQA.from_chain_type(
-            llm=self.llm,
-            retriever=self.retriever,
-            chain_type_kwargs={"prompt": prompt}
-        )
+    @staticmethod
+    def _extract_text_response(result) -> str:
+        if isinstance(result, str):
+            return result
+
+        content = getattr(result, "content", None)
+        if isinstance(content, str):
+            return content
+
+        if isinstance(content, list):
+            parts = []
+            for part in content:
+                if isinstance(part, str):
+                    parts.append(part)
+                elif isinstance(part, dict) and "text" in part:
+                    parts.append(str(part["text"]))
+            if parts:
+                return "\n".join(parts)
+
+        return str(result)
 
     def ask(self, question: str) -> str:
         language = self._detect_language(question)
-        chain = self._create_chain(language)
-        result = chain.invoke({"query": question})
-        return result["result"]
+        documents = self._retrieve_documents(question)
+        context = "\n\n".join(
+            doc.page_content for doc in documents if getattr(doc, "page_content", "")
+        )
+
+        if not context.strip():
+            if language == "vi":
+                return "Tài liệu không có đủ thông tin để trả lời câu hỏi này."
+            return "The document does not contain enough information to answer this question."
+
+        template = self._build_template(language)
+        prompt = template.format(context=context, question=question)
+        result = self.llm.invoke(prompt)
+        return self._extract_text_response(result)
