@@ -2,6 +2,7 @@ import os
 import tempfile
 from typing import Any, Tuple
 
+from config import CHUNK_SIZE, CHUNK_OVERLAP
 from loaders.docx_loader import DOCXLoader
 from loaders.pdf_loader import PDFLoader
 from rag.embeddings import Embeddings
@@ -35,10 +36,28 @@ class RagPdfService:
         file_size_mb = uploaded_file.size / (1024 * 1024)
         return file_size_mb <= max_size_mb, file_size_mb
 
-    def build_chain(self, uploaded_file: Any) -> Chain:
-        """Tạo QA chain từ file tài liệu upload."""
+    @staticmethod
+    def validate_chunk_params(chunk_size: int, chunk_overlap: int) -> None:
+        if chunk_size <= 0:
+            raise ValueError("chunk_size phải lớn hơn 0")
+        if chunk_overlap < 0:
+            raise ValueError("chunk_overlap không được âm")
+        if chunk_overlap >= chunk_size:
+            raise ValueError("chunk_overlap phải nhỏ hơn chunk_size")
+
+    def build_chain(
+        self,
+        uploaded_file: Any,
+        chunk_size: int | None = None,
+        chunk_overlap: int | None = None,
+    ) -> Chain:
+        """Tạo QA chain từ file tài liệu upload với tham số chunk tùy chỉnh."""
         tmp_path = None
         try:
+            resolved_chunk_size = CHUNK_SIZE if chunk_size is None else chunk_size
+            resolved_chunk_overlap = CHUNK_OVERLAP if chunk_overlap is None else chunk_overlap
+            self.validate_chunk_params(resolved_chunk_size, resolved_chunk_overlap)
+
             suffix = self._detect_file_suffix(uploaded_file)
 
             with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
@@ -46,9 +65,17 @@ class RagPdfService:
                 tmp_path = tmp.name
 
             if suffix == ".pdf":
-                chunks = self.pdf_loader.load_and_split(tmp_path)
+                chunks = self.pdf_loader.load_and_split(
+                    tmp_path,
+                    chunk_size=resolved_chunk_size,
+                    chunk_overlap=resolved_chunk_overlap,
+                )
             else:
-                chunks = self.docx_loader.load_and_split(tmp_path)
+                chunks = self.docx_loader.load_and_split(
+                    tmp_path,
+                    chunk_size=resolved_chunk_size,
+                    chunk_overlap=resolved_chunk_overlap,
+                )
 
             if not chunks:
                 raise ValueError("Không thể trích xuất các đoạn văn bản từ tài liệu")

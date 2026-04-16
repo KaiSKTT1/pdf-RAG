@@ -5,15 +5,19 @@ from config import CHUNK_SIZE, CHUNK_OVERLAP
 
 class PDFLoader(BaseLoader):
 
-    def load_and_split(self,file_path:str) -> list:
+    def load_and_split(
+        self,
+        file_path: str,
+        chunk_size: int = CHUNK_SIZE,
+        chunk_overlap: int = CHUNK_OVERLAP,
+    ) -> list:
         loader = PyPDFLoader(file_path)
         documents = loader.load()
-        splitter = RecursiveCharacterTextSplitter(
-            chunk_size=CHUNK_SIZE,
-            chunk_overlap=CHUNK_OVERLAP
-        )
-        chunks = splitter.split_documents(documents)
-        print(len(chunks))
-        print(chunks[0].page_content)
+        if not documents:
+            return []
 
-        return chunks
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap
+        )
+        return splitter.split_documents(documents)

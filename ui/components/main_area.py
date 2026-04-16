@@ -1,7 +1,12 @@
 # ui/components/main_area.py
 import streamlit as st
 from services.rag_pdf_service import RagPdfService
-from config import MAX_UPLOAD_FILE_MB
+from config import MAX_UPLOAD_FILE_MB, CHUNK_SIZE, CHUNK_OVERLAP
+from ui.session_state import (
+    ensure_app_session_state,
+    rebuild_chat_history_from_messages,
+    reset_chat_history_state,
+)
 
 class MainArea:
     def __init__(self):
@@ -16,49 +21,8 @@ class MainArea:
         self._chat()
 
     def _init_session_state(self):
-        if "chain" not in st.session_state:
-            st.session_state.chain = None
-        if "messages" not in st.session_state:
-            st.session_state.messages = []
-        if "chat_history" not in st.session_state:
-            st.session_state.chat_history = []
-        if "selected_history_idx" not in st.session_state:
-            st.session_state.selected_history_idx = None
-        if "selected_document_name" not in st.session_state:
-            st.session_state.selected_document_name = None
-        if "active_document_name" not in st.session_state:
-            st.session_state.active_document_name = None
-        if "uploader_key_seed" not in st.session_state:
-            st.session_state.uploader_key_seed = 0
-
-        self._rebuild_chat_history_from_messages()
-
-    @staticmethod
-    def _rebuild_chat_history_from_messages():
-        """Đồng bộ lịch sử Q&A từ messages để tránh lệch số lượng câu hỏi."""
-        messages = st.session_state.get("messages", [])
-        rebuilt_history = []
-
-        for msg in messages:
-            role = msg.get("role")
-            content = msg.get("content", "")
-
-            if role == "user":
-                rebuilt_history.append({
-                    "question": content,
-                    "answer": "",
-                    "status": "pending",
-                })
-            elif role == "assistant":
-                for item in reversed(rebuilt_history):
-                    if not item.get("answer"):
-                        item["answer"] = content
-                        item["status"] = "answered"
-                        break
-
-        existing_history = st.session_state.get("chat_history", [])
-        if len(rebuilt_history) >= len(existing_history):
-            st.session_state.chat_history = rebuilt_history
+        ensure_app_session_state()
+        rebuild_chat_history_from_messages()
 
     # hàm đó không dùng dữ liệu của object nên để staticmethod cho đúng ý nghĩa.
 
@@ -124,21 +88,64 @@ class MainArea:
 
         if uploaded_file and st.button("⚡ Xử lý tài liệu"):
             try:
+                chunk_size, chunk_overlap = self._resolve_chunk_params()
+
                 with st.spinner("Đang xử lý tài liệu..."):
-                    st.session_state.chain = self.qa_service.build_chain(uploaded_file)
+                    st.session_state.chain = self.qa_service.build_chain(
+                        uploaded_file,
+                        chunk_size=chunk_size,
+                        chunk_overlap=chunk_overlap,
+                    )
                     st.session_state.active_document_name = uploaded_file.name
-                    st.session_state.messages = []  # reset chat
-                    st.session_state.chat_history = []  # reset lịch sử Q&A
-                    st.session_state.selected_history_idx = None
+                    st.session_state.chain_chunk_size = chunk_size
+                    st.session_state.chain_chunk_overlap = chunk_overlap
+                    reset_chat_history_state()
                 st.toast(f"Xử lý tài liệu xong: {uploaded_file.name}", icon="✅")
             except Exception as exc:
                 st.session_state.chain = None
                 st.session_state.active_document_name = None
+                st.session_state.chain_chunk_size = None
+                st.session_state.chain_chunk_overlap = None
                 st.toast(self._friendly_model_error(exc), icon="❌")
+
+    @staticmethod
+    def _resolve_chunk_params() -> tuple[int, int]:
+        chunk_size = int(st.session_state.get("chunk_size", CHUNK_SIZE))
+        chunk_overlap = int(st.session_state.get("chunk_overlap", CHUNK_OVERLAP))
+        return chunk_size, chunk_overlap
+
+    @staticmethod
+    def _record_user_question(question: str) -> int:
+        st.session_state.messages.append({"role": "user", "content": question})
+        st.session_state.chat_history.append(
+            {
+                "question": question,
+                "answer": "",
+                "status": "pending",
+            }
+        )
+        return len(st.session_state.chat_history) - 1
+
+    @staticmethod
+    def _record_assistant_response(history_index: int, content: str, status: str) -> None:
+        st.session_state.messages.append(
+            {
+                "role": "assistant",
+                "content": content,
+            }
+        )
+        st.session_state.chat_history[history_index]["answer"] = content
+        st.session_state.chat_history[history_index]["status"] = status
 
     def _chat(self):
         if st.session_state.active_document_name:
             st.caption(f"📌 Đang hỏi trên file: {st.session_state.active_document_name}")
+            active_chunk_size = st.session_state.get("chain_chunk_size")
+            active_chunk_overlap = st.session_state.get("chain_chunk_overlap")
+            if active_chunk_size and active_chunk_overlap is not None:
+                st.caption(
+                    f"⚙️ Chunk đang áp dụng: size={active_chunk_size}, overlap={active_chunk_overlap}"
+                )
 
         # Hiển thị lịch sử chat
         for message in st.session_state.messages:
@@ -152,13 +159,7 @@ class MainArea:
                 return
 
             # Hiển thị câu hỏi
-            st.session_state.messages.append({"role": "user", "content": question})
-            st.session_state.chat_history.append({
-                "question": question,
-                "answer": "",
-                "status": "pending",
-            })
-            history_index = len(st.session_state.chat_history) - 1
+            history_index = self._record_user_question(question)
 
             with st.chat_message("user"):
                 st.write(question)
@@ -169,19 +170,9 @@ class MainArea:
                     try:
                         answer = self.qa_service.ask(st.session_state.chain, question)
                         st.write(answer)
-                        st.session_state.messages.append({
-                            "role": "assistant",
-                            "content": answer
-                        })
-                        st.session_state.chat_history[history_index]["answer"] = answer
-                        st.session_state.chat_history[history_index]["status"] = "answered"
+                        self._record_assistant_response(history_index, answer, "answered")
                     except Exception as exc:
                         error_message = self._friendly_model_error(exc)
                         st.write(error_message)
                         st.toast(error_message, icon="❌")
-                        st.session_state.messages.append({
-                            "role": "assistant",
-                            "content": error_message,
-                        })
-                        st.session_state.chat_history[history_index]["answer"] = error_message
-                        st.session_state.chat_history[history_index]["status"] = "error"
+                        self._record_assistant_response(history_index, error_message, "error")

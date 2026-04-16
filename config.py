@@ -16,6 +16,8 @@ EMBEDDING_NORMALIZE = True
 # ===== TEXT SPLITTER =====
 CHUNK_SIZE = 500
 CHUNK_OVERLAP = 50
+CHUNK_SIZE_OPTIONS = [500, 1000, 1500, 2000]
+CHUNK_OVERLAP_OPTIONS = [50, 100, 200]
 
 # ===== RETRIEVER =====
 SEARCH_TYPE = "similarity"      # hoặc "mmr" để kết quả đa dạng hơn
