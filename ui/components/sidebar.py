@@ -10,16 +10,35 @@ class Sidebar:
             st.divider()
             self._chat_history()
             st.divider()
+            self._action_buttons()
+            st.divider()
             self._settings()
             st.divider()
             self._model_config()
 
+        # Render dialog outside sidebar for more consistent click behavior
+        self._render_pending_dialogs()
+
     @staticmethod
     def _ensure_session_state():
+        if "chain" not in st.session_state:
+            st.session_state.chain = None
+        if "messages" not in st.session_state:
+            st.session_state.messages = []
         if "chat_history" not in st.session_state:
             st.session_state.chat_history = []
         if "selected_history_idx" not in st.session_state:
             st.session_state.selected_history_idx = None
+        if "selected_document_name" not in st.session_state:
+            st.session_state.selected_document_name = None
+        if "active_document_name" not in st.session_state:
+            st.session_state.active_document_name = None
+        if "uploader_key_seed" not in st.session_state:
+            st.session_state.uploader_key_seed = 0
+        if "show_clear_history_dialog" not in st.session_state:
+            st.session_state.show_clear_history_dialog = False
+        if "show_clear_vector_store_dialog" not in st.session_state:
+            st.session_state.show_clear_vector_store_dialog = False
 
     def _instructions(self):
         st.header("📖 Hướng dẫn")
@@ -60,6 +79,76 @@ class Sidebar:
         st.info(selected_item.get("question", ""))
         with st.expander("Xem câu trả lời", expanded=False):
             st.write(selected_item.get("answer", ""))
+
+    @st.dialog("Xác nhận xóa lịch sử")
+    def _confirm_clear_history(self):
+        st.write("Bạn có chắc muốn xóa toàn bộ lịch sử chat trong session hiện tại?")
+        col_confirm, col_cancel = st.columns(2)
+        with col_confirm:
+            if st.button("Xóa", type="primary", key="confirm_clear_history"):
+                st.session_state.messages = []
+                st.session_state.chat_history = []
+                st.session_state.selected_history_idx = None
+                st.session_state.show_clear_history_dialog = False
+                st.toast("Đã xóa toàn bộ lịch sử chat.", icon="✅")
+                st.rerun()
+        with col_cancel:
+            if st.button("Hủy", key="cancel_clear_history"):
+                st.session_state.show_clear_history_dialog = False
+                st.rerun()
+
+    @st.dialog("Xác nhận xóa vector store")
+    def _confirm_clear_vector_store(self):
+        st.write("Bạn có chắc muốn xóa tài liệu đã upload và vector store hiện tại?")
+        col_confirm, col_cancel = st.columns(2)
+        with col_confirm:
+            if st.button("Xóa", type="primary", key="confirm_clear_vector_store"):
+                st.session_state.chain = None
+                st.session_state.active_document_name = None
+                st.session_state.selected_document_name = None
+                st.session_state.messages = []
+                st.session_state.chat_history = []
+                st.session_state.selected_history_idx = None
+                st.session_state.uploader_key_seed = st.session_state.get("uploader_key_seed", 0) + 1
+                st.session_state.show_clear_vector_store_dialog = False
+                st.toast("Đã xóa vector store và reset tài liệu upload.", icon="✅")
+                st.rerun()
+        with col_cancel:
+            if st.button("Hủy", key="cancel_clear_vector_store"):
+                st.session_state.show_clear_vector_store_dialog = False
+                st.rerun()
+
+    def _action_buttons(self):
+        st.header("🧹 Quản lý dữ liệu")
+        history_count = len(st.session_state.get("chat_history", []))
+        has_vector_store = (
+            st.session_state.get("chain") is not None
+            or bool(st.session_state.get("active_document_name"))
+        )
+
+        st.caption(f"Lịch sử hiện có: {history_count} câu hỏi")
+        if st.button(
+            "Clear History",
+            use_container_width=True,
+            disabled=history_count == 0,
+            help="Xóa toàn bộ câu hỏi và trả lời trong session hiện tại.",
+        ):
+            st.session_state.show_clear_history_dialog = True
+
+        if st.button(
+            "Clear Vector Store",
+            use_container_width=True,
+            disabled=not has_vector_store,
+            help="Xóa tài liệu đã xử lý và dữ liệu truy xuất hiện tại.",
+        ):
+            st.session_state.show_clear_vector_store_dialog = True
+
+    def _render_pending_dialogs(self):
+        if st.session_state.get("show_clear_history_dialog"):
+            self._confirm_clear_history()
+
+        if st.session_state.get("show_clear_vector_store_dialog"):
+            self._confirm_clear_vector_store()
 
     def _settings(self):
         st.header("⚙️ Cài đặt")

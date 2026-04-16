@@ -28,6 +28,37 @@ class MainArea:
             st.session_state.selected_document_name = None
         if "active_document_name" not in st.session_state:
             st.session_state.active_document_name = None
+        if "uploader_key_seed" not in st.session_state:
+            st.session_state.uploader_key_seed = 0
+
+        self._rebuild_chat_history_from_messages()
+
+    @staticmethod
+    def _rebuild_chat_history_from_messages():
+        """Đồng bộ lịch sử Q&A từ messages để tránh lệch số lượng câu hỏi."""
+        messages = st.session_state.get("messages", [])
+        rebuilt_history = []
+
+        for msg in messages:
+            role = msg.get("role")
+            content = msg.get("content", "")
+
+            if role == "user":
+                rebuilt_history.append({
+                    "question": content,
+                    "answer": "",
+                    "status": "pending",
+                })
+            elif role == "assistant":
+                for item in reversed(rebuilt_history):
+                    if not item.get("answer"):
+                        item["answer"] = content
+                        item["status"] = "answered"
+                        break
+
+        existing_history = st.session_state.get("chat_history", [])
+        if len(rebuilt_history) >= len(existing_history):
+            st.session_state.chat_history = rebuilt_history
 
     # hàm đó không dùng dữ liệu của object nên để staticmethod cho đúng ý nghĩa.
 
@@ -59,7 +90,8 @@ class MainArea:
         return f"Lỗi khi gọi mô hình: {error_text}"
 
     def _file_uploader(self):
-        uploaded_file = st.file_uploader("📂 Chọn file", type=["pdf", "docx"])
+        uploader_key = f"doc_uploader_{st.session_state.uploader_key_seed}"
+        uploaded_file = st.file_uploader("📂 Chọn file", type=["pdf", "docx"], key=uploader_key)
 
         if uploaded_file is not None:
             st.session_state.selected_document_name = uploaded_file.name
@@ -121,6 +153,13 @@ class MainArea:
 
             # Hiển thị câu hỏi
             st.session_state.messages.append({"role": "user", "content": question})
+            st.session_state.chat_history.append({
+                "question": question,
+                "answer": "",
+                "status": "pending",
+            })
+            history_index = len(st.session_state.chat_history) - 1
+
             with st.chat_message("user"):
                 st.write(question)
 
@@ -134,9 +173,15 @@ class MainArea:
                             "role": "assistant",
                             "content": answer
                         })
-                        st.session_state.chat_history.append({
-                            "question": question,
-                            "answer": answer,
-                        })
+                        st.session_state.chat_history[history_index]["answer"] = answer
+                        st.session_state.chat_history[history_index]["status"] = "answered"
                     except Exception as exc:
-                        st.toast(self._friendly_model_error(exc), icon="❌")
+                        error_message = self._friendly_model_error(exc)
+                        st.write(error_message)
+                        st.toast(error_message, icon="❌")
+                        st.session_state.messages.append({
+                            "role": "assistant",
+                            "content": error_message,
+                        })
+                        st.session_state.chat_history[history_index]["answer"] = error_message
+                        st.session_state.chat_history[history_index]["status"] = "error"
