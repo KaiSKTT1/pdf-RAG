@@ -1,8 +1,15 @@
+"""Script benchmark nhanh cho các cấu hình chunk_size/chunk_overlap.
+
+Mục tiêu: đánh giá chất lượng retrieval (top1/top5) bằng cách lấy mẫu các
+chunk gốc rồi kiểm tra khả năng retriever tìm lại đúng chunk đó.
+"""
+
 from pathlib import Path
 import sys
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
+    # Cho phép chạy script trực tiếp mà vẫn import được module project root.
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from langchain_community.vectorstores import FAISS
@@ -14,10 +21,12 @@ from rag.embeddings import Embeddings
 
 
 def _normalize_text(text: str) -> str:
+    """Chuẩn hóa text để so sánh retrieval ổn định hơn."""
     return " ".join((text or "").lower().split())
 
 
 def _build_query_from_chunk(text: str) -> str:
+    """Sinh query ngắn từ một phần nội dung chunk để thử truy xuất."""
     words = (text or "").split()
     if not words:
         return ""
@@ -28,6 +37,7 @@ def _build_query_from_chunk(text: str) -> str:
 
 
 def _sample_indices(total: int, max_samples: int = 20) -> list[int]:
+    """Lấy mẫu đều các index chunk để benchmark nhanh, tránh chạy toàn bộ."""
     if total <= max_samples:
         return list(range(total))
 
@@ -37,6 +47,7 @@ def _sample_indices(total: int, max_samples: int = 20) -> list[int]:
 
 
 def _load_chunks_for_config(data_dir: Path, chunk_size: int, chunk_overlap: int):
+    """Nạp và chia chunk cho toàn bộ tài liệu trong data_dir theo cấu hình đầu vào."""
     pdf_loader = PDFLoader()
     docx_loader = DOCXLoader()
     chunks = []
@@ -63,6 +74,7 @@ def _load_chunks_for_config(data_dir: Path, chunk_size: int, chunk_overlap: int)
 
 
 def evaluate_chunk_configs(data_dir: Path):
+    """Đánh giá tất cả tổ hợp chunk config và trả kết quả đã sắp xếp."""
     embedder = Embeddings().embedder
     results = []
 
@@ -97,6 +109,7 @@ def evaluate_chunk_configs(data_dir: Path):
             valid_queries = 0
 
             for idx in query_indices:
+                # Mỗi query được tạo từ chunk gốc để đo tỷ lệ retriever tìm lại đúng nguồn.
                 source_chunk = chunks[idx]
                 source_text = _normalize_text(source_chunk.page_content)
                 query = _build_query_from_chunk(source_chunk.page_content)
@@ -143,6 +156,7 @@ def evaluate_chunk_configs(data_dir: Path):
 
 
 def main():
+    """Chạy benchmark và in kết quả dạng CSV ra stdout."""
     data_dir = PROJECT_ROOT / "data"
 
     if not data_dir.exists():

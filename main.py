@@ -1,6 +1,7 @@
-# main.py
+"""Điểm vào để chạy ứng dụng web Streamlit."""
+
 from ui.streamlit_app import StreamlitApp
 
-# Hàm main chạy streamlit app
+
 if __name__ == "__main__":
     StreamlitApp().run()
