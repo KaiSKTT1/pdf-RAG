@@ -6,7 +6,7 @@ trạng thái nhất quán giữa sidebar và main area.
 
 import streamlit as st
 
-from config import CHUNK_SIZE, CHUNK_OVERLAP
+from config import CHUNK_OVERLAP, CHUNK_SIZE, OCR_MODE_DEFAULT
 
 
 _SESSION_DEFAULT_FACTORIES = {
@@ -19,8 +19,11 @@ _SESSION_DEFAULT_FACTORIES = {
     "uploader_key_seed": lambda: 0,
     "chunk_size": lambda: CHUNK_SIZE,
     "chunk_overlap": lambda: CHUNK_OVERLAP,
+    "ocr_mode": lambda: OCR_MODE_DEFAULT,
     "chain_chunk_size": lambda: None,
     "chain_chunk_overlap": lambda: None,
+    "chain_ocr_mode": lambda: None,
+    "chain_ocr_stats": lambda: None,
     "show_clear_history_dialog": lambda: False,
     "show_clear_vector_store_dialog": lambda: False,
 }
@@ -44,6 +47,12 @@ def normalize_chunk_selection(
         st.session_state.chunk_overlap = CHUNK_OVERLAP
 
 
+def normalize_ocr_selection(ocr_mode_options: list[str]) -> None:
+    """Chuẩn hóa lựa chọn OCR mode để luôn hợp lệ với danh sách option."""
+    if st.session_state.ocr_mode not in ocr_mode_options:
+        st.session_state.ocr_mode = OCR_MODE_DEFAULT
+
+
 def reset_chat_history_state() -> None:
     """Xóa tin nhắn chat trong phiên và metadata lịch sử liên quan."""
     st.session_state.messages = []
@@ -58,6 +67,8 @@ def reset_vector_store_state() -> None:
     st.session_state.selected_document_name = None
     st.session_state.chain_chunk_size = None
     st.session_state.chain_chunk_overlap = None
+    st.session_state.chain_ocr_mode = None
+    st.session_state.chain_ocr_stats = None
     reset_chat_history_state()
     st.session_state.uploader_key_seed = st.session_state.get("uploader_key_seed", 0) + 1
 

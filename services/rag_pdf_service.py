@@ -4,7 +4,7 @@ import os
 import tempfile
 from typing import Any, Tuple
 
-from config import CHUNK_SIZE, CHUNK_OVERLAP
+from config import CHUNK_OVERLAP, CHUNK_SIZE, OCR_MODE_DEFAULT
 from loaders.docx_loader import DOCXLoader
 from loaders.pdf_loader import PDFLoader
 from rag.embeddings import Embeddings
@@ -19,6 +19,11 @@ class RagPdfService:
         self.pdf_loader = PDFLoader()
         self.docx_loader = DOCXLoader()
         self.embeddings = Embeddings()
+        self.last_build_stats: dict = {}
+
+    def get_last_build_stats(self) -> dict:
+        """Trả về thống kê lần build chain gần nhất để phục vụ quan sát hiệu suất."""
+        return dict(self.last_build_stats)
 
     @staticmethod
     def _detect_file_suffix(uploaded_file: Any) -> str:
@@ -73,12 +78,15 @@ class RagPdfService:
         uploaded_file: Any,
         chunk_size: int | None = None,
         chunk_overlap: int | None = None,
+        ocr_mode: str | None = None,
     ) -> Chain:
         """Tạo chain hỏi đáp từ file upload với cấu hình chunk tùy chỉnh."""
         tmp_path = None
+        self.last_build_stats = {}
         try:
             resolved_chunk_size = CHUNK_SIZE if chunk_size is None else chunk_size
             resolved_chunk_overlap = CHUNK_OVERLAP if chunk_overlap is None else chunk_overlap
+            resolved_ocr_mode = OCR_MODE_DEFAULT if ocr_mode is None else ocr_mode
             self.validate_chunk_params(resolved_chunk_size, resolved_chunk_overlap)
 
             suffix = self._detect_file_suffix(uploaded_file)
@@ -92,6 +100,7 @@ class RagPdfService:
                     tmp_path,
                     chunk_size=resolved_chunk_size,
                     chunk_overlap=resolved_chunk_overlap,
+                    ocr_mode=resolved_ocr_mode,
                 )
             else:
                 chunks = self.docx_loader.load_and_split(
@@ -105,6 +114,22 @@ class RagPdfService:
 
             # Metadata bổ sung giúp giao diện hiển thị citation chi tiết.
             self._enrich_chunk_metadata(chunks, source_name=uploaded_file.name)
+
+            self.last_build_stats = {
+                "source_type": suffix,
+                "chunk_size": resolved_chunk_size,
+                "chunk_overlap": resolved_chunk_overlap,
+                "ocr": self.pdf_loader.get_last_load_stats() if suffix == ".pdf" else {
+                    "ocr_mode": "off",
+                    "pages_total": 0,
+                    "chunks_total": len(chunks),
+                    "ocr_pages_attempted": 0,
+                    "ocr_pages_successful": 0,
+                    "ocr_pages_failed": 0,
+                    "ocr_elapsed_seconds": 0.0,
+                    "elapsed_seconds": 0.0,
+                },
+            }
 
             vectorstore = self.embeddings.create_vectorstore(chunks)
             retriever = Retriever(vectorstore)

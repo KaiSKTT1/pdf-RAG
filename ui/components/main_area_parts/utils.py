@@ -25,15 +25,17 @@ def friendly_model_error(exc: Exception) -> str:
     error_lower = error_text.lower()
 
     if "resourceexhausted" in error_lower or "quota" in error_lower or "429" in error_lower:
-        return "Hết quota Gemini. Vui lòng kiểm tra lại hạn mức hoặc đổi API key/project."
+        return "Backend LLM báo vượt hạn mức/tốc độ. Vui lòng thử lại sau hoặc đổi backend."
     if (
         "api key" in error_lower
         or "permission denied" in error_lower
         or "unauthorized" in error_lower
     ):
-        return "Gemini API key không hợp lệ hoặc chưa được cấp quyền."
+        return "Thông tin xác thực backend không hợp lệ hoặc chưa được cấp quyền."
+    if "ollama" in error_lower or "connection refused" in error_lower or "localhost:11434" in error_lower:
+        return "Không kết nối được Ollama. Hãy chạy 'ollama serve' và kiểm tra model qwen2.5 đã pull." 
     if "connect" in error_lower or "connection" in error_lower or "timeout" in error_lower:
-        return "Không kết nối được tới dịch vụ mô hình. Vui lòng thử lại sau."
+        return "Không kết nối được tới dịch vụ mô hình. Vui lòng kiểm tra Ollama rồi thử lại."
 
     return f"Lỗi khi gọi mô hình: {error_text}"
 

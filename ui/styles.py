@@ -73,7 +73,8 @@ def get_css() -> str:
         .citation-answer {{
             line-height: 1.8;
             font-size: 1.01rem;
-            white-space: normal;
+            /* Giữ xuống dòng và khoảng trắng đầu dòng để code không bị mất thụt lề. */
+            white-space: pre-wrap;
         }}
         .citation-highlight {{
             text-decoration: none;

@@ -2,7 +2,7 @@
 
 import streamlit as st
 
-from config import CHUNK_OVERLAP, CHUNK_SIZE
+from config import CHUNK_OVERLAP, CHUNK_SIZE, OCR_MODE_DEFAULT
 
 
 def resolve_chunk_params() -> tuple[int, int]:
@@ -10,6 +10,11 @@ def resolve_chunk_params() -> tuple[int, int]:
     chunk_size = int(st.session_state.get("chunk_size", CHUNK_SIZE))
     chunk_overlap = int(st.session_state.get("chunk_overlap", CHUNK_OVERLAP))
     return chunk_size, chunk_overlap
+
+
+def resolve_ocr_mode() -> str:
+    """Lấy OCR mode từ session state và ép về chuỗi hợp lệ cơ bản."""
+    return str(st.session_state.get("ocr_mode", OCR_MODE_DEFAULT)).strip().lower()
 
 
 def record_user_question(question: str) -> int:

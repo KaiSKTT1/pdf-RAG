@@ -10,6 +10,7 @@ from ui.components.sidebar_parts.panels import (
     render_chunk_strategy_controls,
     render_instructions,
     render_model_config,
+    render_ocr_controls,
     render_settings,
 )
 from ui.components.sidebar_parts.state import ensure_sidebar_state
@@ -24,6 +25,8 @@ class Sidebar:
             render_instructions()
             st.divider()
             render_chunk_strategy_controls()
+            st.divider()
+            render_ocr_controls()
             st.divider()
             render_chat_history()
             st.divider()
