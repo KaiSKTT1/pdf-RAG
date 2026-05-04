@@ -66,6 +66,25 @@ def _render_latency_caption(timings: dict) -> None:
 
     st.caption(caption)
 
+    rerank = timings.get("rerank")
+    if rerank:
+        bi_count = int(rerank.get("bi_encoder_count", 0) or 0)
+        reranked_count = int(rerank.get("reranked_count", 0) or 0)
+        rerank_ms = float(rerank.get("latency_ms", 0.0) or 0.0)
+        skipped = bool(rerank.get("skipped", False))
+
+        rerank_scores = timings.get("rerank_scores", [])
+        scores_str = ""
+        if rerank_scores:
+            scores_str = " | scores: " + ", ".join(f"{s:.3f}" for s in rerank_scores[:reranked_count])
+
+        if skipped:
+            st.caption(f"🔀 rerank=skipped | bi-encoder={bi_count} docs → top={reranked_count}{scores_str}")
+        else:
+            st.caption(
+                f"🔀 rerank={rerank_ms:.1f}ms | bi-encoder={bi_count} docs → top={reranked_count}{scores_str}"
+            )
+
 
 def _render_chat_messages() -> None:
     """Hiển thị toàn bộ tin nhắn đã lưu trong phiên theo thứ tự thời gian."""

@@ -24,6 +24,14 @@ EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
 EMBEDDING_DEVICE = "cpu"        # Đổi thành "cuda" khi máy có GPU.
 EMBEDDING_NORMALIZE = True
 
+# ===== Cross-Encoder Re-ranker =====
+# Model nhỏ, chạy tốt trên CPU, hỗ trợ tiếng Anh tốt
+# Thay thế bằng "BAAI/bge-reranker-base" nếu cần hỗ trợ tiếng Việt tốt hơn
+CROSS_ENCODER_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+RERANKER_BATCH_SIZE = 16    # Giảm xuống 8 nếu RAM thấp
+RERANKER_MAX_LENGTH = 512
+USE_RERANKER =True        # False = tắt hoàn toàn, dùng bi-encoder thuần
+
 # ===== Chia văn bản =====
 CHUNK_SIZE = 500
 CHUNK_OVERLAP = 50

@@ -4,12 +4,14 @@ import os
 import tempfile
 from typing import Any, Tuple
 
-from config import CHUNK_OVERLAP, CHUNK_SIZE, OCR_MODE_DEFAULT
+from config import CHUNK_OVERLAP, CHUNK_SIZE, OCR_MODE_DEFAULT, USE_RERANKER
 from loaders.docx_loader import DOCXLoader
 from loaders.pdf_loader import PDFLoader
 from rag.embeddings import Embeddings
 from rag.retriever import Retriever
 from rag.chain import Chain
+
+from rag.reranker import CrossEncoderReranker, HybridRetriever
 
 
 class RagPdfService:
@@ -20,6 +22,9 @@ class RagPdfService:
         self.docx_loader = DOCXLoader()
         self.embeddings = Embeddings()
         self.last_build_stats: dict = {}
+
+   
+        self._ce_reranker = CrossEncoderReranker() if USE_RERANKER else None
 
     def get_last_build_stats(self) -> dict:
         """Trả về thống kê lần build chain gần nhất để phục vụ quan sát hiệu suất."""
@@ -34,7 +39,9 @@ class RagPdfService:
         if file_name.endswith(".pdf") or mime_type == "application/pdf":
             return ".pdf"
 
-        if file_name.endswith(".docx") or mime_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+        if file_name.endswith(".docx") or mime_type == (
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        ):
             return ".docx"
 
         raise ValueError("Định dạng file không hợp lệ. Chỉ hỗ trợ PDF hoặc DOCX")
@@ -69,7 +76,9 @@ class RagPdfService:
 
             start_index = metadata.get("start_index")
             if isinstance(start_index, int):
-                metadata["end_index"] = start_index + len(getattr(chunk, "page_content", "") or "")
+                metadata["end_index"] = start_index + len(
+                    getattr(chunk, "page_content", "") or ""
+                )
 
             chunk.metadata = metadata
 
@@ -112,13 +121,16 @@ class RagPdfService:
             if not chunks:
                 raise ValueError("Không thể trích xuất các đoạn văn bản từ tài liệu")
 
-            # Metadata bổ sung giúp giao diện hiển thị citation chi tiết.
             self._enrich_chunk_metadata(chunks, source_name=uploaded_file.name)
 
             self.last_build_stats = {
                 "source_type": suffix,
                 "chunk_size": resolved_chunk_size,
                 "chunk_overlap": resolved_chunk_overlap,
+                "use_reranker": USE_RERANKER,
+                "reranker_available": (
+                    self._ce_reranker.is_available if self._ce_reranker else False
+                ),
                 "ocr": self.pdf_loader.get_last_load_stats() if suffix == ".pdf" else {
                     "ocr_mode": "off",
                     "pages_total": 0,
@@ -132,8 +144,20 @@ class RagPdfService:
             }
 
             vectorstore = self.embeddings.create_vectorstore(chunks)
-            retriever = Retriever(vectorstore)
-            return Chain(retriever.get_retriever())
+
+        
+            # nếu reranker khả dụng. Chain nhận retriever chuẩn LangChain.
+            bi_retriever = Retriever(vectorstore).get_retriever()
+
+            if USE_RERANKER and self._ce_reranker and self._ce_reranker.is_available:
+                # 2-stage pipeline: bi-encoder lấy FETCH_K, cross-encoder lọc TOP_K
+                final_retriever = HybridRetriever(bi_retriever, self._ce_reranker)
+            else:
+                # Fallback: chỉ dùng bi-encoder
+                final_retriever = bi_retriever
+
+            return Chain(final_retriever)
+
         finally:
             if tmp_path and os.path.exists(tmp_path):
                 os.unlink(tmp_path)
