@@ -25,12 +25,10 @@ EMBEDDING_DEVICE = "cpu"        # Đổi thành "cuda" khi máy có GPU.
 EMBEDDING_NORMALIZE = True
 
 # ===== Cross-Encoder Re-ranker =====
-# Model nhỏ, chạy tốt trên CPU, hỗ trợ tiếng Anh tốt
-# Thay thế bằng "BAAI/bge-reranker-base" nếu cần hỗ trợ tiếng Việt tốt hơn
 CROSS_ENCODER_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 RERANKER_BATCH_SIZE = 16    # Giảm xuống 8 nếu RAM thấp
 RERANKER_MAX_LENGTH = 512
-USE_RERANKER =True        # False = tắt hoàn toàn, dùng bi-encoder thuần
+USE_RERANKER =False        # False = tắt hoàn toàn, dùng bi-encoder thuần
 
 # ===== Chia văn bản =====
 CHUNK_SIZE = 500
@@ -71,3 +69,17 @@ OCR_GPU = False
 # Giới hạn số trang được OCR cho mỗi tài liệu để tránh quá tải khi PDF rất lớn.
 # Đặt 0 để bỏ giới hạn.
 OCR_MAX_PAGES_PER_DOC = 120
+
+
+# Bật/tắt toàn bộ Self-RAG pipeline
+USE_SELF_RAG: bool = False
+
+ 
+# Ngưỡng confidence (0.0–1.0): dưới ngưỡng → retry với query mới
+# 0.7 = nếu LLM tự đánh giá < 70% chắc chắn → rewrite + retrieve lại
+SELF_RAG_CONFIDENCE_THRESHOLD: float = 0.7
+ 
+# Số lần retry tối đa (không tính lần đầu)
+# Tổng số LLM calls = (MAX_HOPS + 1) * 3 (rewrite + answer + evaluate)
+SELF_RAG_MAX_HOPS: int = 2
+ 

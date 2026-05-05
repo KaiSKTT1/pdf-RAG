@@ -14,6 +14,9 @@ from config import (
     MAX_CONTEXT_CHARS,
     OLLAMA_BASE_URL,
     OLLAMA_MODEL,
+    USE_SELF_RAG,
+    SELF_RAG_CONFIDENCE_THRESHOLD,
+    SELF_RAG_MAX_HOPS,
 )
 from .chain_parts.core_utils import (
     build_citations,
@@ -25,6 +28,9 @@ from .chain_parts.fallback import build_quota_fallback_answer
 from .chain_parts.prompts import build_template, detect_language, is_code_request
 from .chain_parts.text_processing import format_context, polish_answer_layout, trim_context
 from .reranker import Reranker
+
+# ── Self-RAG Advanced (v3) — batch relevance filter + multi-score confidence ─
+from .self_rag1 import SelfRagAdvanced
 
 
 class Chain:
@@ -41,8 +47,45 @@ class Chain:
             num_predict=LLM_NUM_PREDICT,
         )
         self.retriever = retriever
-   
         self.reranker = Reranker()
+
+
+        # ── Self-RAG Advanced (v3) ───────────────────────────────────────────────
+        if USE_SELF_RAG:
+            self.self_rag_advanced = SelfRagAdvanced(
+                retriever=self.retriever,
+                max_hops=SELF_RAG_MAX_HOPS,
+                relevance_threshold=0.45,
+                support_threshold=SELF_RAG_CONFIDENCE_THRESHOLD,
+            )
+        else:
+            self.self_rag_advanced = None
+
+    # ── Helper methods (giữ lại, vẫn dùng bởi nhánh B) ──────────────────────
+
+    def _retrieve_with_rerank(self, query: str) -> list:
+        """Retrieve + rerank cho 1 query."""
+        documents = retrieve_documents(self.retriever, query)
+        documents, _ = self.reranker.rerank(query, documents)
+        return documents
+
+    def _generate_answer(
+        self, question: str, documents: list, language: str, is_code_request_flag: bool
+    ) -> str:
+        """Sinh câu trả lời từ documents."""
+        context = format_context(documents)
+        context = trim_context(context, MAX_CONTEXT_CHARS)
+        if not context.strip():
+            return ""
+        template = build_template(language, is_code_request_flag=is_code_request_flag)
+        prompt = template.format(context=context, question=question)
+        result = self.llm.invoke(prompt)
+        answer = extract_text_response(result)
+        if is_code_request_flag:
+            answer = polish_answer_layout(answer)
+        return answer
+
+    # ── Main ask() ────────────────────────────────────────────────────────────
 
     def ask(self, question: str, return_sources: bool = False):
         """Trả lời câu hỏi, tuỳ chọn trả kèm citations và timing breakdown."""
@@ -52,6 +95,48 @@ class Chain:
         language = detect_language(question)
         is_code_request_flag = is_code_request(question)
 
+    
+        # ═══════════════════════════════════════════════════════════════════════
+        # NHÁNH A2: Self-RAG Advanced (v3)
+        # Pipeline: Rewrite → Retrieve → Batch Filter → Generate → Eval → Follow-up
+        # ═══════════════════════════════════════════════════════════════════════
+        if self.self_rag_advanced is not None:
+            t_adv = time.perf_counter()
+            adv_result = self.self_rag_advanced.run(
+                question=question,
+                language=language,
+            )
+            timings["self_rag_seconds"] = round(time.perf_counter() - t_adv, 3)
+            timings["self_rag"] = adv_result.to_dict()
+            timings["self_rag_confidence"] = adv_result.confidence
+            timings["self_rag_relevance"] = adv_result.relevance_score
+            timings["self_rag_support"] = adv_result.support_score
+            timings["self_rag_utility"] = adv_result.utility_score
+            timings["retrieval_count"] = adv_result.retrieval_count
+            timings["filtered_count"] = adv_result.filtered_count
+            timings["total_seconds"] = round(time.perf_counter() - t0, 3)
+            timings["rag_pipeline"] = "Self-RAG Advanced"
+
+            answer = adv_result.final_answer
+            if not answer:
+                answer = (
+                    "Tài liệu không có đủ thông tin để trả lời câu hỏi này."
+                    if language == "vi"
+                    else "The document does not contain enough information to answer this question."
+                )
+
+            if return_sources:
+                return {
+                    "answer": answer,
+                    "citations": adv_result.citations,
+                    "timings": timings,
+                }
+            return answer
+
+        # ═══════════════════════════════════════════════════════════════════════
+        # NHÁNH B: Pipeline gốc (không Self-RAG)
+        # ═══════════════════════════════════════════════════════════════════════
+
         # ── Bi-encoder retrieval ──────────────────────────────────────────────
         t_retrieval_start = time.perf_counter()
         documents = retrieve_documents(self.retriever, question)
@@ -59,11 +144,9 @@ class Chain:
         timings["retrieval_candidates"] = len(documents)
 
         # ── Cross-Encoder re-ranking ──────────────────────────────────────────
-        # ✅ FIX: Reranker.rerank() trả về tuple (list[Document], RerankResult)
         t_rerank_start = time.perf_counter()
         documents, rerank_result = self.reranker.rerank(question, documents)
         timings["rerank_seconds"] = round(time.perf_counter() - t_rerank_start, 3)
-        # ✅ FIX: gọi .to_dict() đúng — method đã được thêm vào RerankResult
         timings["rerank"] = rerank_result.to_dict()
         timings["rerank_scores"] = rerank_result.scores
 
@@ -123,6 +206,7 @@ class Chain:
             timings["fallback"] = "retrieval_only"
 
         timings["total_seconds"] = round(time.perf_counter() - t0, 3)
+        timings["rag_pipeline"] = "Standard + Rerank"
 
         if return_sources:
             return {
