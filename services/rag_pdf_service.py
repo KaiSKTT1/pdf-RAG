@@ -4,7 +4,7 @@ import os
 import tempfile
 from typing import Any, Tuple
 
-from config import CHUNK_OVERLAP, CHUNK_SIZE, OCR_MODE_DEFAULT, USE_RERANKER
+from config import CHUNK_OVERLAP, CHUNK_SIZE, OCR_MODE_DEFAULT, USE_RERANKER, USE_HYBRID_SEARCH
 from loaders.docx_loader import DOCXLoader
 from loaders.pdf_loader import PDFLoader
 from rag.embeddings import Embeddings
@@ -128,6 +128,7 @@ class RagPdfService:
                 "chunk_size": resolved_chunk_size,
                 "chunk_overlap": resolved_chunk_overlap,
                 "use_reranker": USE_RERANKER,
+                "use_hybrid_search": USE_HYBRID_SEARCH,
                 "reranker_available": (
                     self._ce_reranker.is_available if self._ce_reranker else False
                 ),
@@ -147,7 +148,7 @@ class RagPdfService:
 
         
             # nếu reranker khả dụng. Chain nhận retriever chuẩn LangChain.
-            bi_retriever = Retriever(vectorstore).get_retriever()
+            bi_retriever = Retriever(vectorstore, chunks if USE_HYBRID_SEARCH else None).get_retriever()
 
             if USE_RERANKER and self._ce_reranker and self._ce_reranker.is_available:
                 # 2-stage pipeline: bi-encoder lấy FETCH_K, cross-encoder lọc TOP_K

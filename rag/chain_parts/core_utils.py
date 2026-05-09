@@ -8,10 +8,19 @@ from typing import Any
 def retrieve_documents(retriever, question: str) -> list:
     """Lấy tài liệu liên quan, hỗ trợ cả API retriever mới và cũ."""
     if hasattr(retriever, "invoke"):
-        return retriever.invoke(question) or []
-    if hasattr(retriever, "get_relevant_documents"):
-        return retriever.get_relevant_documents(question) or []
-    raise AttributeError("Retriever không hỗ trợ invoke/get_relevant_documents")
+        docs = retriever.invoke(question) or []
+    elif hasattr(retriever, "get_relevant_documents"):
+        docs = retriever.get_relevant_documents(question) or []
+    else:
+        raise AttributeError("Retriever không hỗ trợ invoke/get_relevant_documents")
+
+    if docs:
+        print(f"\n=== Retrieved {len(docs)} documents for query: {question!r} ===")
+        for i, doc in enumerate(docs):
+            print(f"\n=== Document {i+1} ===")
+            print(getattr(doc, "page_content", ""))
+
+    return docs
 
 
 def extract_text_response(result) -> str:

@@ -41,6 +41,10 @@ SEARCH_TYPE = "similarity"      # Có thể đổi sang "mmr" để đa dạng k
 TOP_K = 3                        # Ưu tiên tốc độ truy xuất + rút gọn prompt.
 FETCH_K = 10                     # Giảm ứng viên để hạ độ trễ khi lấy context.
 
+# ===== Hybrid Search =====
+USE_HYBRID_SEARCH = True         # True: kết hợp vector + BM25, False: chỉ vector
+HYBRID_WEIGHTS = [0.5, 0.5]      # Trọng số cho [vector, BM25] trong ensemble
+
 # ===== Upload =====
 MAX_UPLOAD_FILE_MB = 200        # Giới hạn dung lượng file upload (MB).
 
