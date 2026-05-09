@@ -29,6 +29,7 @@ from config import (
     RERANKER_MAX_LENGTH,
     USE_RERANKER,
 )
+from .retriever import Retriever, metadata_filter_predicate
 
 logger = logging.getLogger(__name__)
 
@@ -224,16 +225,17 @@ class HybridRetriever:
         self._bi_retriever = bi_encoder_retriever
         self._reranker = reranker
         self._last_stats: Optional[LatencyStats] = None
+        self._bm25_docs_cache: dict[int, list] = {}
 
     @property
     def last_stats(self) -> Optional[LatencyStats]:
         return self._last_stats
 
-    def invoke(self, query: str) -> list:
+    def invoke(self, query: str, metadata_filter: dict | None = None) -> list:
         """Giao diện chuẩn LangChain — thay thế trực tiếp Retriever.get_retriever()."""
         # Tầng 1: Bi-encoder lấy ứng viên
         t_bi = time.perf_counter()
-        candidates = self._fetch_candidates(query)
+        candidates = self._fetch_candidates(query, metadata_filter=metadata_filter)
         bi_ms = (time.perf_counter() - t_bi) * 1000
 
         # Tầng 2: Cross-encoder re-rank
@@ -249,13 +251,40 @@ class HybridRetriever:
 
         return result.documents
 
-    def get_relevant_documents(self, query: str) -> list:
+    def get_relevant_documents(self, query: str, metadata_filter: dict | None = None) -> list:
         """Tương thích LangChain cũ."""
-        return self.invoke(query)
+        return self.invoke(query, metadata_filter=metadata_filter)
 
-    def _fetch_candidates(self, query: str) -> list:
+    def _fetch_candidates(self, query: str, metadata_filter: dict | None = None) -> list:
+        self._apply_metadata_filter(metadata_filter)
         if hasattr(self._bi_retriever, "invoke"):
             return self._bi_retriever.invoke(query) or []
         if hasattr(self._bi_retriever, "get_relevant_documents"):
             return self._bi_retriever.get_relevant_documents(query) or []
         raise AttributeError("bi_encoder_retriever không hỗ trợ invoke/get_relevant_documents")
+
+    def _apply_metadata_filter(self, metadata_filter: dict | None) -> None:
+        """Đẩy filter xuống các retriever tầng dưới nếu chúng hỗ trợ."""
+        predicate = metadata_filter_predicate(metadata_filter)
+
+        if hasattr(self._bi_retriever, "retrievers"):
+            for sub_retriever in getattr(self._bi_retriever, "retrievers", []):
+                Retriever.apply_metadata_filter_to_retriever(sub_retriever, metadata_filter)
+                if hasattr(sub_retriever, "docs"):
+                    retriever_id = id(sub_retriever)
+                    if retriever_id not in self._bm25_docs_cache:
+                        self._bm25_docs_cache[retriever_id] = list(
+                            getattr(sub_retriever, "docs", []) or []
+                        )
+                    docs = list(self._bm25_docs_cache.get(retriever_id, []))
+                    if predicate is None:
+                        sub_retriever.docs = docs
+                    else:
+                        sub_retriever.docs = [
+                            doc
+                            for doc in docs
+                            if predicate(dict(getattr(doc, "metadata", {}) or {}))
+                        ]
+            return
+
+        Retriever.apply_metadata_filter_to_retriever(self._bi_retriever, metadata_filter)

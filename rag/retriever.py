@@ -9,10 +9,41 @@ Khi bật reranker, ta cần FETCH_K > TOP_K để cross-encoder có đủ ứng
 và k truyền vào phải là FETCH_K (cross-encoder sẽ giảm xuống TOP_K sau).
 """
 
+from __future__ import annotations
+
 from langchain_community.vectorstores import FAISS
 from langchain_community.retrievers import BM25Retriever
 from langchain.retrievers import EnsembleRetriever
 from config import SEARCH_TYPE, TOP_K, FETCH_K, USE_RERANKER, USE_HYBRID_SEARCH, HYBRID_WEIGHTS
+
+
+def metadata_filter_predicate(metadata_filter: dict | None):
+    """Tạo hàm predicate cho vectorstore filter theo metadata đã chọn."""
+    if not metadata_filter:
+        return None
+
+    source_names = set(metadata_filter.get("source_names") or [])
+    document_types = set(metadata_filter.get("document_types") or [])
+    uploaded_dates = set(metadata_filter.get("uploaded_dates") or [])
+
+    if not source_names and not document_types and not uploaded_dates:
+        return None
+
+    def _predicate(metadata: dict) -> bool:
+        file_name = str(metadata.get("file_name") or metadata.get("source_name") or "")
+        document_type = str(metadata.get("document_type") or "")
+        uploaded_at = str(metadata.get("uploaded_at") or "")
+        uploaded_date = uploaded_at[:10] if len(uploaded_at) >= 10 else uploaded_at
+
+        if source_names and file_name not in source_names:
+            return False
+        if document_types and document_type not in document_types:
+            return False
+        if uploaded_dates and uploaded_date not in uploaded_dates:
+            return False
+        return True
+
+    return _predicate
 
 
 class Retriever:
@@ -65,6 +96,19 @@ class Retriever:
                 search_type=SEARCH_TYPE,
                 search_kwargs=search_kwargs,
             )
+
+    @staticmethod
+    def apply_metadata_filter_to_retriever(retriever, metadata_filter: dict | None):
+        """Gắn predicate filter động vào retriever có hỗ trợ search_kwargs."""
+        predicate = metadata_filter_predicate(metadata_filter)
+        if not hasattr(retriever, "search_kwargs"):
+            return
+        search_kwargs = dict(getattr(retriever, "search_kwargs", {}) or {})
+        if predicate is None:
+            search_kwargs.pop("filter", None)
+        else:
+            search_kwargs["filter"] = predicate
+        retriever.search_kwargs = search_kwargs
 
     def get_retriever(self):
         """Trả về retriever đã cấu hình sẵn cho chain sử dụng."""

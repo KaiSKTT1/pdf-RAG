@@ -24,6 +24,11 @@ _SESSION_DEFAULT_FACTORIES = {
     "chain_chunk_overlap": lambda: None,
     "chain_ocr_mode": lambda: None,
     "chain_ocr_stats": lambda: None,
+    "document_catalog": list,
+    "metadata_filter_source_names": list,
+    "metadata_filter_document_types": list,
+    "metadata_filter_uploaded_dates": list,
+    "metadata_filters_reset_pending": lambda: False,
     "show_clear_history_dialog": lambda: False,
     "show_clear_vector_store_dialog": lambda: False,
 }
@@ -69,6 +74,11 @@ def reset_vector_store_state() -> None:
     st.session_state.chain_chunk_overlap = None
     st.session_state.chain_ocr_mode = None
     st.session_state.chain_ocr_stats = None
+    st.session_state.document_catalog = []
+    st.session_state.metadata_filter_source_names = []
+    st.session_state.metadata_filter_document_types = []
+    st.session_state.metadata_filter_uploaded_dates = []
+    st.session_state.metadata_filters_reset_pending = False
     reset_chat_history_state()
     st.session_state.uploader_key_seed = st.session_state.get("uploader_key_seed", 0) + 1
 

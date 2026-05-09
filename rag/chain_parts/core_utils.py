@@ -5,12 +5,18 @@ from __future__ import annotations
 from typing import Any
 
 
-def retrieve_documents(retriever, question: str) -> list:
+def retrieve_documents(retriever, question: str, metadata_filter: dict | None = None) -> list:
     """Lấy tài liệu liên quan, hỗ trợ cả API retriever mới và cũ."""
     if hasattr(retriever, "invoke"):
-        docs = retriever.invoke(question) or []
+        try:
+            docs = retriever.invoke(question, metadata_filter=metadata_filter) or []
+        except TypeError:
+            docs = retriever.invoke(question) or []
     elif hasattr(retriever, "get_relevant_documents"):
-        docs = retriever.get_relevant_documents(question) or []
+        try:
+            docs = retriever.get_relevant_documents(question, metadata_filter=metadata_filter) or []
+        except TypeError:
+            docs = retriever.get_relevant_documents(question) or []
     else:
         raise AttributeError("Retriever không hỗ trợ invoke/get_relevant_documents")
 
@@ -77,6 +83,9 @@ def build_citations(documents: list, limit: int = 5) -> list[dict[str, Any]]:
                 "start_index": metadata.get("start_index"),
                 "end_index": metadata.get("end_index"),
                 "chunk_id": metadata.get("chunk_id"),
+                "file_name": metadata.get("file_name"),
+                "uploaded_at": metadata.get("uploaded_at"),
+                "document_type": metadata.get("document_type"),
                 "context": getattr(doc, "page_content", ""),
             }
         )

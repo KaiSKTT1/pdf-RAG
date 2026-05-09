@@ -98,6 +98,53 @@ def render_ocr_controls() -> None:
     )
 
 
+def render_metadata_filters() -> None:
+    """Hiển thị filter theo metadata document để thu hẹp ngữ cảnh tìm kiếm."""
+    st.header("🗂️ Metadata Filter")
+    document_catalog = st.session_state.get("document_catalog", []) or []
+    if not document_catalog:
+        st.caption("Chưa có metadata tài liệu. Hãy xử lý tài liệu trước.")
+        return
+
+    if st.session_state.get("metadata_filters_reset_pending", False):
+        st.session_state.metadata_filter_source_names = []
+        st.session_state.metadata_filter_document_types = []
+        st.session_state.metadata_filter_uploaded_dates = []
+        st.session_state.metadata_filters_reset_pending = False
+
+    source_options = [item.get("file_name", "") for item in document_catalog if item.get("file_name")]
+    type_options = sorted(
+        {
+            str(item.get("document_type", "")).lower()
+            for item in document_catalog
+            if item.get("document_type")
+        }
+    )
+    date_options = sorted(
+        {
+            str(item.get("uploaded_at", ""))[:10]
+            for item in document_catalog
+            if item.get("uploaded_at")
+        }
+    )
+
+    st.multiselect(
+        "Lọc theo tên file",
+        options=source_options,
+        key="metadata_filter_source_names",
+    )
+    st.multiselect(
+        "Lọc theo loại tài liệu",
+        options=type_options,
+        key="metadata_filter_document_types",
+    )
+    st.multiselect(
+        "Lọc theo ngày upload",
+        options=date_options,
+        key="metadata_filter_uploaded_dates",
+    )
+
+
 def render_settings() -> None:
     """Hiển thị nhanh các tham số cấu hình truy xuất hiện tại."""
     st.header("⚙️ Cài đặt")
@@ -121,6 +168,10 @@ def render_settings() -> None:
             - **OCR elapsed (s):** {float(stats.get("ocr_elapsed_seconds", 0.0) or 0.0):.2f}
             """
         )
+
+    document_catalog = st.session_state.get("document_catalog", []) or []
+    if document_catalog:
+        st.markdown(f"- **Số tài liệu đã nạp:** {len(document_catalog)}")
 
 
 def render_model_config() -> None:

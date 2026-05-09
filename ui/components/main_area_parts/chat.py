@@ -1,5 +1,7 @@
 """Hiển thị và điều phối luồng chat hỏi đáp trong main area."""
 
+import re
+
 import streamlit as st
 
 from config import TARGET_RESPONSE_SECONDS
@@ -44,6 +46,72 @@ def _parse_qa_response(response) -> tuple[str, list[dict], dict]:
             dict(response.get("timings", {}) or {}),
         )
     return str(response), [], {}
+
+
+def _build_metadata_filter_from_state() -> dict:
+    """Đọc filter metadata đang chọn từ session_state."""
+    return {
+        "source_names": list(st.session_state.get("metadata_filter_source_names", []) or []),
+        "document_types": list(st.session_state.get("metadata_filter_document_types", []) or []),
+        "uploaded_dates": list(st.session_state.get("metadata_filter_uploaded_dates", []) or []),
+    }
+
+
+def _tokenize(text: str) -> set[str]:
+    """Tách token đơn giản để so khớp nội dung với context citation."""
+    return set(re.findall(r"[a-zA-Z0-9À-ỹ]{3,}", (text or "").lower()))
+
+
+def _append_inline_source_to_answer(answer: str, citations: list[dict]) -> str:
+    """Gắn nguồn ngay trong từng ý trả lời thay vì gom ở mục riêng."""
+    if not answer or not citations:
+        return answer
+
+    citation_entries = []
+    for citation in citations:
+        source_name = str(citation.get("source_name") or "").strip()
+        context = str(citation.get("context") or "")
+        if not source_name or not context:
+            continue
+        citation_entries.append(
+            {
+                "source_name": source_name,
+                "tokens": _tokenize(context),
+            }
+        )
+
+    if not citation_entries:
+        return answer
+
+    enriched_lines = []
+    for line in answer.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            enriched_lines.append(line)
+            continue
+        if "(Nguồn:" in line:
+            enriched_lines.append(line)
+            continue
+
+        line_tokens = _tokenize(stripped)
+        if not line_tokens:
+            enriched_lines.append(line)
+            continue
+
+        best_source = None
+        best_score = 0
+        for entry in citation_entries:
+            overlap = len(line_tokens.intersection(entry["tokens"]))
+            if overlap > best_score:
+                best_score = overlap
+                best_source = entry["source_name"]
+
+        if best_source and best_score > 0:
+            enriched_lines.append(f"{line} (Nguồn: {best_source})")
+        else:
+            enriched_lines.append(line)
+
+    return "\n".join(enriched_lines)
 
 
 def _render_latency_caption(timings: dict) -> None:
@@ -184,9 +252,11 @@ def render_chat(qa_service) -> None:
                         st.session_state.chain,
                         question,
                         return_details=True,
+                        metadata_filter=_build_metadata_filter_from_state(),
                     )
                     answer, citations, timings = _parse_qa_response(response)
                     answer = normalize_answer_text(answer)
+                    answer = _append_inline_source_to_answer(answer, citations)
 
                     if "rag_pipeline" in timings:
                         st.session_state.chain_rag_pipeline = timings["rag_pipeline"]

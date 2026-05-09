@@ -87,7 +87,46 @@ class Chain:
 
     # ── Main ask() ────────────────────────────────────────────────────────────
 
-    def ask(self, question: str, return_sources: bool = False):
+    @staticmethod
+    def _match_metadata_filter(metadata: dict, metadata_filter: dict) -> bool:
+        """So khớp metadata của chunk với các điều kiện filter đang chọn."""
+        if not metadata_filter:
+            return True
+
+        source_names = set(metadata_filter.get("source_names") or [])
+        document_types = set(metadata_filter.get("document_types") or [])
+        uploaded_dates = set(metadata_filter.get("uploaded_dates") or [])
+
+        if source_names and str(metadata.get("file_name") or metadata.get("source_name")) not in source_names:
+            return False
+        if document_types and str(metadata.get("document_type")) not in document_types:
+            return False
+
+        uploaded_at = str(metadata.get("uploaded_at") or "")
+        uploaded_date = uploaded_at[:10] if len(uploaded_at) >= 10 else uploaded_at
+        if uploaded_dates and uploaded_date not in uploaded_dates:
+            return False
+
+        return True
+
+    def _apply_metadata_filter(self, documents: list, metadata_filter: dict | None) -> list:
+        """Lọc danh sách documents theo metadata người dùng chọn."""
+        if not metadata_filter:
+            return documents
+
+        filtered_docs = []
+        for doc in documents:
+            metadata = dict(getattr(doc, "metadata", {}) or {})
+            if self._match_metadata_filter(metadata, metadata_filter):
+                filtered_docs.append(doc)
+        return filtered_docs
+
+    def ask(
+        self,
+        question: str,
+        return_sources: bool = False,
+        metadata_filter: dict | None = None,
+    ):
         """Trả lời câu hỏi, tuỳ chọn trả kèm citations và timing breakdown."""
         t0 = time.perf_counter()
         timings: dict[str, float | int | str] = {}
@@ -100,7 +139,7 @@ class Chain:
         # NHÁNH A2: Self-RAG Advanced (v3)
         # Pipeline: Rewrite → Retrieve → Batch Filter → Generate → Eval → Follow-up
         # ═══════════════════════════════════════════════════════════════════════
-        if self.self_rag_advanced is not None:
+        if self.self_rag_advanced is not None and not metadata_filter:
             t_adv = time.perf_counter()
             adv_result = self.self_rag_advanced.run(
                 question=question,
@@ -139,7 +178,12 @@ class Chain:
 
         # ── Bi-encoder retrieval ──────────────────────────────────────────────
         t_retrieval_start = time.perf_counter()
-        documents = retrieve_documents(self.retriever, question)
+        documents = retrieve_documents(
+            self.retriever,
+            question,
+            metadata_filter=metadata_filter,
+        )
+        documents = self._apply_metadata_filter(documents, metadata_filter)
         timings["retrieval_seconds"] = round(time.perf_counter() - t_retrieval_start, 3)
         timings["retrieval_candidates"] = len(documents)
 

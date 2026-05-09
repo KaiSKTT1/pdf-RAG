@@ -33,12 +33,12 @@ USE_RERANKER =False        # False = tắt hoàn toàn, dùng bi-encoder thuần
 # ===== Chia văn bản =====
 CHUNK_SIZE = 500
 CHUNK_OVERLAP = 50
-CHUNK_SIZE_OPTIONS = [500, 1000, 1500, 2000]
+CHUNK_SIZE_OPTIONS = [300, 500, 1000, 1500, 2000]
 CHUNK_OVERLAP_OPTIONS = [50, 100, 200]
 
 # ===== Retriever =====
 SEARCH_TYPE = "similarity"      # Có thể đổi sang "mmr" để đa dạng kết quả.
-TOP_K = 3                        # Ưu tiên tốc độ truy xuất + rút gọn prompt.
+TOP_K = 20                        # Ưu tiên tốc độ truy xuất + rút gọn prompt.
 FETCH_K = 10                     # Giảm ứng viên để hạ độ trễ khi lấy context.
 
 # ===== Hybrid Search =====

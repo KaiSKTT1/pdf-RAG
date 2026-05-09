@@ -2,6 +2,7 @@
 
 import os
 import tempfile
+from datetime import datetime
 from typing import Any, Tuple
 
 from config import CHUNK_OVERLAP, CHUNK_SIZE, OCR_MODE_DEFAULT, USE_RERANKER, USE_HYBRID_SEARCH
@@ -62,13 +63,21 @@ class RagPdfService:
             raise ValueError("chunk_overlap phải nhỏ hơn chunk_size")
 
     @staticmethod
-    def _enrich_chunk_metadata(chunks: list, source_name: str) -> None:
+    def _enrich_chunk_metadata(
+        chunks: list,
+        source_name: str,
+        uploaded_at: str,
+        document_type: str,
+    ) -> None:
         """Bổ sung metadata phục vụ giao diện citation (nguồn, trang, vị trí...)."""
         for idx, chunk in enumerate(chunks, start=1):
             metadata = dict(getattr(chunk, "metadata", {}) or {})
 
             metadata["chunk_id"] = idx
             metadata["source_name"] = source_name
+            metadata["file_name"] = source_name
+            metadata["uploaded_at"] = uploaded_at
+            metadata["document_type"] = document_type
 
             page = metadata.get("page")
             if isinstance(page, int):
@@ -82,22 +91,16 @@ class RagPdfService:
 
             chunk.metadata = metadata
 
-    def build_chain(
+    def _extract_chunks_from_uploaded_file(
         self,
         uploaded_file: Any,
-        chunk_size: int | None = None,
-        chunk_overlap: int | None = None,
-        ocr_mode: str | None = None,
-    ) -> Chain:
-        """Tạo chain hỏi đáp từ file upload với cấu hình chunk tùy chỉnh."""
+        chunk_size: int,
+        chunk_overlap: int,
+        ocr_mode: str,
+    ) -> tuple[list, str]:
+        """Tách chunk từ một file upload và trả về (chunks, suffix)."""
         tmp_path = None
-        self.last_build_stats = {}
         try:
-            resolved_chunk_size = CHUNK_SIZE if chunk_size is None else chunk_size
-            resolved_chunk_overlap = CHUNK_OVERLAP if chunk_overlap is None else chunk_overlap
-            resolved_ocr_mode = OCR_MODE_DEFAULT if ocr_mode is None else ocr_mode
-            self.validate_chunk_params(resolved_chunk_size, resolved_chunk_overlap)
-
             suffix = self._detect_file_suffix(uploaded_file)
 
             with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
@@ -107,62 +110,128 @@ class RagPdfService:
             if suffix == ".pdf":
                 chunks = self.pdf_loader.load_and_split(
                     tmp_path,
-                    chunk_size=resolved_chunk_size,
-                    chunk_overlap=resolved_chunk_overlap,
-                    ocr_mode=resolved_ocr_mode,
+                    chunk_size=chunk_size,
+                    chunk_overlap=chunk_overlap,
+                    ocr_mode=ocr_mode,
                 )
             else:
                 chunks = self.docx_loader.load_and_split(
                     tmp_path,
-                    chunk_size=resolved_chunk_size,
-                    chunk_overlap=resolved_chunk_overlap,
+                    chunk_size=chunk_size,
+                    chunk_overlap=chunk_overlap,
                 )
-
-            if not chunks:
-                raise ValueError("Không thể trích xuất các đoạn văn bản từ tài liệu")
-
-            self._enrich_chunk_metadata(chunks, source_name=uploaded_file.name)
-
-            self.last_build_stats = {
-                "source_type": suffix,
-                "chunk_size": resolved_chunk_size,
-                "chunk_overlap": resolved_chunk_overlap,
-                "use_reranker": USE_RERANKER,
-                "use_hybrid_search": USE_HYBRID_SEARCH,
-                "reranker_available": (
-                    self._ce_reranker.is_available if self._ce_reranker else False
-                ),
-                "ocr": self.pdf_loader.get_last_load_stats() if suffix == ".pdf" else {
-                    "ocr_mode": "off",
-                    "pages_total": 0,
-                    "chunks_total": len(chunks),
-                    "ocr_pages_attempted": 0,
-                    "ocr_pages_successful": 0,
-                    "ocr_pages_failed": 0,
-                    "ocr_elapsed_seconds": 0.0,
-                    "elapsed_seconds": 0.0,
-                },
-            }
-
-            vectorstore = self.embeddings.create_vectorstore(chunks)
-
-        
-            # nếu reranker khả dụng. Chain nhận retriever chuẩn LangChain.
-            bi_retriever = Retriever(vectorstore, chunks if USE_HYBRID_SEARCH else None).get_retriever()
-
-            if USE_RERANKER and self._ce_reranker and self._ce_reranker.is_available:
-                # 2-stage pipeline: bi-encoder lấy FETCH_K, cross-encoder lọc TOP_K
-                final_retriever = HybridRetriever(bi_retriever, self._ce_reranker)
-            else:
-                # Fallback: chỉ dùng bi-encoder
-                final_retriever = bi_retriever
-
-            return Chain(final_retriever)
-
+            return chunks, suffix
         finally:
             if tmp_path and os.path.exists(tmp_path):
                 os.unlink(tmp_path)
 
-    def ask(self, chain: Chain, question: str, return_details: bool = False):
+    def build_chain(
+        self,
+        uploaded_file: Any,
+        chunk_size: int | None = None,
+        chunk_overlap: int | None = None,
+        ocr_mode: str | None = None,
+    ) -> Chain:
+        """Giữ tương thích ngược: build chain từ một file duy nhất."""
+        return self.build_chain_from_uploads(
+            uploaded_files=[uploaded_file],
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+            ocr_mode=ocr_mode,
+        )
+
+    def build_chain_from_uploads(
+        self,
+        uploaded_files: list[Any],
+        chunk_size: int | None = None,
+        chunk_overlap: int | None = None,
+        ocr_mode: str | None = None,
+    ) -> Chain:
+        """Tạo chain hỏi đáp từ nhiều file upload với metadata theo document."""
+        self.last_build_stats = {}
+        resolved_chunk_size = CHUNK_SIZE if chunk_size is None else chunk_size
+        resolved_chunk_overlap = CHUNK_OVERLAP if chunk_overlap is None else chunk_overlap
+        resolved_ocr_mode = OCR_MODE_DEFAULT if ocr_mode is None else ocr_mode
+        self.validate_chunk_params(resolved_chunk_size, resolved_chunk_overlap)
+
+        if not uploaded_files:
+            raise ValueError("Vui lòng chọn ít nhất một tài liệu")
+
+        all_chunks: list = []
+        doc_stats: list[dict] = []
+        now_iso = datetime.now().isoformat(timespec="seconds")
+
+        for uploaded_file in uploaded_files:
+            chunks, suffix = self._extract_chunks_from_uploaded_file(
+                uploaded_file=uploaded_file,
+                chunk_size=resolved_chunk_size,
+                chunk_overlap=resolved_chunk_overlap,
+                ocr_mode=resolved_ocr_mode,
+            )
+
+            if not chunks:
+                continue
+
+            doc_type = suffix.removeprefix(".").lower()
+            self._enrich_chunk_metadata(
+                chunks,
+                source_name=uploaded_file.name,
+                uploaded_at=now_iso,
+                document_type=doc_type,
+            )
+            all_chunks.extend(chunks)
+            doc_stats.append(
+                {
+                    "file_name": uploaded_file.name,
+                    "document_type": doc_type,
+                    "uploaded_at": now_iso,
+                    "chunks_total": len(chunks),
+                }
+            )
+
+        if not all_chunks:
+            raise ValueError("Không thể trích xuất các đoạn văn bản từ tài liệu đã chọn")
+
+        self.last_build_stats = {
+            "documents": doc_stats,
+            "documents_total": len(doc_stats),
+            "chunk_size": resolved_chunk_size,
+            "chunk_overlap": resolved_chunk_overlap,
+            "use_reranker": USE_RERANKER,
+            "use_hybrid_search": USE_HYBRID_SEARCH,
+            "reranker_available": (
+                self._ce_reranker.is_available if self._ce_reranker else False
+            ),
+            "ocr": self.pdf_loader.get_last_load_stats(),
+        }
+
+        vectorstore = self.embeddings.create_vectorstore(all_chunks)
+
+        # nếu reranker khả dụng. Chain nhận retriever chuẩn LangChain.
+        bi_retriever = Retriever(
+            vectorstore,
+            all_chunks if USE_HYBRID_SEARCH else None,
+        ).get_retriever()
+
+        if USE_RERANKER and self._ce_reranker and self._ce_reranker.is_available:
+            # 2-stage pipeline: bi-encoder lấy FETCH_K, cross-encoder lọc TOP_K
+            final_retriever = HybridRetriever(bi_retriever, self._ce_reranker)
+        else:
+            # Fallback: chỉ dùng bi-encoder
+            final_retriever = bi_retriever
+
+        return Chain(final_retriever)
+
+    def ask(
+        self,
+        chain: Chain,
+        question: str,
+        return_details: bool = False,
+        metadata_filter: dict | None = None,
+    ):
         """Trả lời câu hỏi từ chain đã tạo. Có thể trả về kèm citation details."""
-        return chain.ask(question, return_sources=return_details)
+        return chain.ask(
+            question,
+            return_sources=return_details,
+            metadata_filter=metadata_filter,
+        )

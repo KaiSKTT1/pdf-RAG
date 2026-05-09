@@ -9,6 +9,7 @@ from ui.components.sidebar_parts.history import render_chat_history
 from ui.components.sidebar_parts.panels import (
     render_chunk_strategy_controls,
     render_instructions,
+    render_metadata_filters,
     render_model_config,
     render_ocr_controls,
     render_settings,
@@ -27,6 +28,8 @@ class Sidebar:
             render_chunk_strategy_controls()
             st.divider()
             render_ocr_controls()
+            st.divider()
+            render_metadata_filters()
             st.divider()
             render_chat_history()
             st.divider()
