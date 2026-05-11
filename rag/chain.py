@@ -139,7 +139,11 @@ class Chain:
         # NHÁNH A2: Self-RAG Advanced (v3)
         # Pipeline: Rewrite → Retrieve → Batch Filter → Generate → Eval → Follow-up
         # ═══════════════════════════════════════════════════════════════════════
-        if self.self_rag_advanced is not None and not metadata_filter:
+      # NHÁNH A2: Self-RAG Advanced (v3)
+        has_active_filter = bool(metadata_filter) and any(
+            metadata_filter.get(k) for k in ("source_names", "document_types", "uploaded_dates")
+        )
+        if self.self_rag_advanced is not None and not has_active_filter:
             t_adv = time.perf_counter()
             adv_result = self.self_rag_advanced.run(
                 question=question,

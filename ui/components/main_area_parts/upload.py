@@ -74,7 +74,14 @@ def render_file_uploader(qa_service) -> None:
                 st.session_state.chain_chunk_size = chunk_size
                 st.session_state.chain_chunk_overlap = chunk_overlap
                 st.session_state.chain_ocr_mode = ocr_mode
-                st.session_state.chain_rag_pipeline = "Self-RAG Advanced" if USE_SELF_RAG else "Standard + Rerank"
+                if USE_SELF_RAG:
+                    pipeline_label = "Self-RAG Advanced"
+                elif USE_RERANKER:
+                    pipeline_label = "Standard + Rerank"
+                else:
+                    pipeline_label = "Standard (No Rerank)"
+
+                st.session_state.chain_rag_pipeline = pipeline_label
                 build_stats = qa_service.get_last_build_stats()
                 st.session_state.chain_ocr_stats = dict(build_stats.get("ocr", {}) or {})
                 st.session_state.metadata_filters_reset_pending = True

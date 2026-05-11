@@ -28,7 +28,7 @@ EMBEDDING_NORMALIZE = True
 CROSS_ENCODER_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 RERANKER_BATCH_SIZE = 16    # Giảm xuống 8 nếu RAM thấp
 RERANKER_MAX_LENGTH = 512
-USE_RERANKER =False        # False = tắt hoàn toàn, dùng bi-encoder thuần
+USE_RERANKER =False    # False = tắt hoàn toàn, dùng bi-encoder thuần
 
 # ===== Chia văn bản =====
 CHUNK_SIZE = 500
@@ -38,8 +38,8 @@ CHUNK_OVERLAP_OPTIONS = [50, 100, 200]
 
 # ===== Retriever =====
 SEARCH_TYPE = "similarity"      # Có thể đổi sang "mmr" để đa dạng kết quả.
-TOP_K = 20                        # Ưu tiên tốc độ truy xuất + rút gọn prompt.
-FETCH_K = 10                     # Giảm ứng viên để hạ độ trễ khi lấy context.
+TOP_K = 3                        # Ưu tiên tốc độ truy xuất + rút gọn prompt.
+FETCH_K = 20                     # Giảm ứng viên để hạ độ trễ khi lấy context.
 
 # ===== Hybrid Search =====
 USE_HYBRID_SEARCH = True         # True: kết hợp vector + BM25, False: chỉ vector
@@ -76,7 +76,7 @@ OCR_MAX_PAGES_PER_DOC = 120
 
 
 # Bật/tắt toàn bộ Self-RAG pipeline
-USE_SELF_RAG: bool = False
+USE_SELF_RAG: bool = True
 
  
 # Ngưỡng confidence (0.0–1.0): dưới ngưỡng → retry với query mới
@@ -85,5 +85,5 @@ SELF_RAG_CONFIDENCE_THRESHOLD: float = 0.7
  
 # Số lần retry tối đa (không tính lần đầu)
 # Tổng số LLM calls = (MAX_HOPS + 1) * 3 (rewrite + answer + evaluate)
-SELF_RAG_MAX_HOPS: int = 2
+SELF_RAG_MAX_HOPS: int = 1
  
